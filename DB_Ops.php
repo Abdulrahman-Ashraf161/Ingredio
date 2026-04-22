@@ -154,6 +154,7 @@ switch ($action) {
     case 'add_ingredient':
         if (!$pdo) { echo json_encode(['success' => true, 'id' => rand(100,999)]); break; }
         $uid  = $_SESSION['user_id'] ?? 0;
+        if (!$uid) { echo json_encode(['success' => false, 'message' => 'Not logged in.']); break; }
         $stmt = $pdo->prepare("INSERT INTO ingredients (user_id, name, quantity, unit, category, expiry_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?)");
         $expiry = !empty($input['expiry_date']) ? $input['expiry_date'] : null;
         $stmt->execute([
@@ -161,7 +162,7 @@ switch ($action) {
             substr(trim($input['name'] ?? ''), 0, 100),
             (float)($input['quantity'] ?? 0),
             $input['unit']     ?? 'g',
-            $input['category'] ?? '',
+            $input['category'] ?? 'other',
             $expiry,
             substr($input['notes'] ?? '', 0, 200),
         ]);

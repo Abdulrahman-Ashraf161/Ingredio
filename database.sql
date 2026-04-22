@@ -14,6 +14,7 @@ USE `ingredio`;
 CREATE TABLE `users` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` VARCHAR(100) NOT NULL,
+    `username` VARCHAR(30) NOT NULL UNIQUE,
     `email` VARCHAR(200) NOT NULL UNIQUE,
     `password_hash` VARCHAR(255) NOT NULL, -- For use with PHP password_hash()
     `calorie_goal` INT DEFAULT 2000,
