@@ -29,30 +29,50 @@ switch ($action) {
             break;
         }
 
-        $url = "https://api.spoonacular.com/recipes/findByIngredients"
-            . "?ingredients=" . urlencode($ingredients)
-            . "&number={$number}&ranking=1&ignorePantry=true"
+        // $url = "https://api.spoonacular.com/recipes/findByIngredients"
+        //     . "?ingredients=" . urlencode($ingredients)
+        //     . "&number={$number}&ranking=1&ignorePantry=true"
+        //     . "&apiKey=" . SPOONACULAR_API_KEY;
+
+        $url = "https://api.spoonacular.com/recipes/complexSearch"
+            . "?includeIngredients=" . urlencode($ingredients)
+            . "&number={$number}"
+            . "&addRecipeNutrition=true"
+            . "&addRecipeInformation=true"
             . "&apiKey=" . SPOONACULAR_API_KEY;
 
-        $json = @file_get_contents($url);
-        if ($json === false) {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        $json = curl_exec($ch);
+        $err  = curl_error($ch);
+        if ($json === false || $err) {
             http_response_code(502);
             echo json_encode(['success' => false, 'message' => 'Could not reach Spoonacular API.']);
             break;
         }
-        $recipes = json_decode($json, true) ?? [];
+        
+        $data = json_decode($json, true) ?? [];
+        $recipes = $data['results'] ?? [];
 
         // Map to our schema
         $results = array_map(function ($r) {
+            $nutrients = $r['nutrition']['nutrients'] ?? [];
+
+            foreach ($nutrients as $n) {
+                if ($n['name'] === 'Calories') $calories = round($n['amount']);
+                if ($n['name'] === 'Protein')  $protein  = round($n['amount']);
+                if ($n['name'] === 'Fat')      $fat      = round($n['amount']);
+            }
             return [
                 'id' => $r['id'],
                 'title' => $r['title'],
                 'image' => $r['image'] ?? '',
                 'readyInMinutes' => $r['readyInMinutes'] ?? null,
                 'servings' => $r['servings'] ?? null,
-                'calories' => null,
-                'protein' => null,
-                'fat' => null,
+                'calories' => $calories,
+                'protein'  => $protein,
+                'fat'      => $fat,
             ];
         }, $recipes);
 
@@ -73,8 +93,13 @@ switch ($action) {
         }
 
         $url = "https://api.spoonacular.com/recipes/{$recipeId}/information?apiKey=" . SPOONACULAR_API_KEY;
-        $json = @file_get_contents($url);
-        if ($json === false) {
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        $json = curl_exec($ch);
+        $err  = curl_error($ch);
+        if ($json === false || $err) {
             http_response_code(502);
             echo json_encode(['success' => false, 'message' => 'Could not reach Spoonacular API.']);
             break;
