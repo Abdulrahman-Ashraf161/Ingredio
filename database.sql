@@ -22,6 +22,7 @@ CREATE TABLE `users` (
     `carbs_goal` INT DEFAULT 250,
     `fat_goal` INT DEFAULT 65,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `avatar_path` VARCHAR(255) DEFAULT 'assets/images/default-avatar.png',
     -- Integrity Constraint: Nutritional goals must be positive values
     CONSTRAINT `chk_user_goals` CHECK (`calorie_goal` >= 0 AND `protein_goal` >= 0)
 ) ENGINE=InnoDB;
