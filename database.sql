@@ -13,17 +13,35 @@ USE `ingredio`;
 -- Stores credentials and daily nutritional targets for fitness tracking
 CREATE TABLE `users` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
+    
+    -- The user's full display name (e.g., for the header greeting)
     `name` VARCHAR(100) NOT NULL,
-    `username` VARCHAR(30) NOT NULL UNIQUE,
+
+    -- The user's unique login identifier
+    -- Constraint: Must be unique, not null, and at least 3 characters
+    `username` VARCHAR(50) NOT NULL UNIQUE,
+    
+    -- Primary contact and secondary login method
     `email` VARCHAR(200) NOT NULL UNIQUE,
-    `password_hash` VARCHAR(255) NOT NULL, -- For use with PHP password_hash()
+    
+    -- Secure hashed password (compatible with PHP password_hash)
+    `password_hash` VARCHAR(255) NOT NULL,
+    
+    -- Avatar picture - allows user to upload custom avatar image
+    `avatar_path` VARCHAR(255) DEFAULT NULL,
+
+    -- Personalized fitness and gym goals
     `calorie_goal` INT DEFAULT 2000,
     `protein_goal` INT DEFAULT 150,
     `carbs_goal` INT DEFAULT 250,
     `fat_goal` INT DEFAULT 65,
+
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `avatar_path` VARCHAR(255) DEFAULT 'assets/images/default-avatar.png',
-    -- Integrity Constraint: Nutritional goals must be positive values
+
+    -- Professional Constraints
+    -- Ensures username and goals meet minimum quality standards
+    CONSTRAINT `chk_name_length` CHECK (CHAR_LENGTH(`name`) >= 3),
+    CONSTRAINT `chk_username_length` CHECK (CHAR_LENGTH(`username`) >= 3),
     CONSTRAINT `chk_user_goals` CHECK (`calorie_goal` >= 0 AND `protein_goal` >= 0)
 ) ENGINE=InnoDB;
 
@@ -54,6 +72,9 @@ CREATE TABLE `cooking_log` (
     `meal_name` VARCHAR(100) NOT NULL,
     `image_path` VARCHAR(255) NOT NULL, -- Stores relative path on the server [cite: 57]
     `calories` INT DEFAULT 0,
+    `protein` INT DEFAULT 0,
+    `carbs` INT DEFAULT 0,
+    `fat` INT DEFAULT 0,
     `notes` TEXT,
     `logged_date` DATE NOT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -70,6 +91,13 @@ CREATE TABLE `saved_recipes` (
     `api_id` INT NOT NULL, -- External ID from Spoonacular/MealDB API
     `title` VARCHAR(255) NOT NULL,
     `image_url` VARCHAR(255),
+    `Description` VARCHAR(200) NOT NULL,
+    `Ingredients` VARCHAR(200) NOT NULL,
+    `instructions` VARCHAR(200) NOT NULL,
+    `calories` INT DEFAULT 0,
+    `protein` INT DEFAULT 0,
+    `carbs` INT DEFAULT 0,
+    `fat` INT DEFAULT 0,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
     -- Constraint: Prevents a user from saving the same recipe multiple times

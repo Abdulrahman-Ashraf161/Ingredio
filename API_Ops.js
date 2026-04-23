@@ -27,8 +27,8 @@
 ============================================================ */
 
 const ENDPOINTS = {
-    DB:     'DB_Ops.php',
-    API:    'API_Ops.php',
+    DB: 'DB_Ops.php',
+    API: 'API_Ops.php',
     UPLOAD: 'Upload.php',
 };
 
@@ -47,9 +47,9 @@ const ENDPOINTS = {
  */
 async function apiFetch(endpoint, payload = {}) {
     const response = await fetch(endpoint, {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
+        body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -72,7 +72,7 @@ async function apiFetch(endpoint, payload = {}) {
 async function apiFetchForm(endpoint, formData) {
     const response = await fetch(endpoint, {
         method: 'POST',
-        body:   formData,
+        body: formData,
         // No Content-Type: browser sets multipart/form-data with boundary
     });
 
@@ -101,8 +101,8 @@ async function apiFetchForm(endpoint, formData) {
  */
 async function loginUser(email, password) {
     return await apiFetch(ENDPOINTS.DB, {
-        action:   'login',
-        email:    email,
+        action: 'login',
+        email: email,
         password: password, // Hashed server-side with password_hash() / password_verify()
     });
 }
@@ -131,15 +131,41 @@ async function logoutUser() {
  */
 async function registerUser({ fullname, username, email, password, avatar = '' }) {
     return await apiFetch(ENDPOINTS.DB, {
-        action:   'register',
-        fullname:  fullname,
-        username:  username,
-        email:     email,
-        password:  password,
-        avatar:    avatar,
+        action: 'register',
+        fullname: fullname,
+        username: username,
+        email: email,
+        password: password,
+        avatar: avatar,
     });
 }
 
+
+/**
+ * fetchUserInfo — Retrieve the logged-in user's profile data.
+ * @returns {Promise<{success: boolean, name, username, email, avatar_path}>}
+ */
+async function fetchUserInfo() {
+    return await apiFetch(ENDPOINTS.DB, {
+        action: 'get_user_info',
+    });
+}
+
+/**
+ * updateProfile — Persist profile changes (name, email, optional password).
+ * Password is only sent if the user typed a new one; server skips update if blank.
+ *
+ * @param {Object} data - { name: string, email: string, password?: string }
+ * @returns {Promise<{success: boolean, message?: string}>}
+ */
+async function updateProfile({ name, email, password = '' }) {
+    return await apiFetch(ENDPOINTS.DB, {
+        action: 'update_profile',
+        name: name,
+        email: email,
+        password: password,
+    });
+}
 
 
 /* ============================================================
@@ -196,13 +222,13 @@ async function fetchPantry() {
  */
 async function addIngredient(ingredient) {
     return await apiFetch(ENDPOINTS.DB, {
-        action:      'add_ingredient',
-        name:        ingredient.name,
-        quantity:    ingredient.quantity,
-        unit:        ingredient.unit,
-        category:    ingredient.category,
+        action: 'add_ingredient',
+        name: ingredient.name,
+        quantity: ingredient.quantity,
+        unit: ingredient.unit,
+        category: ingredient.category,
         expiry_date: ingredient.expiry_date,
-        notes:       ingredient.notes ?? '',
+        notes: ingredient.notes ?? '',
     });
 }
 
@@ -213,12 +239,12 @@ async function addIngredient(ingredient) {
  */
 async function updateIngredient(ingredient) {
     return await apiFetch(ENDPOINTS.DB, {
-        action:      'update_ingredient',
-        id:          ingredient.id,
-        name:        ingredient.name,
-        quantity:    ingredient.quantity,
-        unit:        ingredient.unit,
-        category:    ingredient.category,
+        action: 'update_ingredient',
+        id: ingredient.id,
+        name: ingredient.name,
+        quantity: ingredient.quantity,
+        unit: ingredient.unit,
+        category: ingredient.category,
         expiry_date: ingredient.expiry_date,
     });
 }
@@ -231,7 +257,7 @@ async function updateIngredient(ingredient) {
 async function deleteIngredient(id) {
     return await apiFetch(ENDPOINTS.DB, {
         action: 'delete_ingredient',
-        id:     id,
+        id: id,
     });
 }
 
@@ -253,35 +279,109 @@ async function deleteIngredient(id) {
 ============================================================ */
 
 /**
- * searchRecipes — Find recipes by available ingredients.
+ * searchRecipes — Find recipes by available ingredients or name.
  * Sends request to API_Ops.php which proxies to Spoonacular.
  *
- * @param {string} ingredients - Comma-separated ingredient names (e.g. "chicken,tomato")
- * @param {number} number      - Max results (default 12)
+ * @param {string} query - Comma-separated ingredient names or meal name
+ * @param {string} searchType - 'ingredients' or 'name'
+ * @param {number} number - Max results (default 12)
  * @returns {Promise<Array<{
  *   id, title, image, readyInMinutes, servings,
  *   calories, protein, fat
  * }>>}
  */
-async function searchRecipes(ingredients, number = 12) {
-    // NOTE: This sends to API_Ops.php — NOT directly to Spoonacular.
-    // API_Ops.php adds the secret API key and forwards the request.
+async function searchRecipes(query, searchType = 'ingredients', number = 12) {
     return await apiFetch(ENDPOINTS.API, {
-        action:      'search_recipes',
-        ingredients: ingredients,
-        number:      number,
+        action: 'search_recipes',
+        query: query,
+        search_type: searchType,
+        number: number,
     });
 }
 
 /**
- * getRecipeDetails — Get full details for a single recipe.
- * @param {number} recipeId - Spoonacular recipe ID
- * @returns {Promise<Object>} Full recipe object
+ * getRecipeDetails — Get full nutritional details for a single recipe.
+ * Validates recipeId client-side before hitting the server.
+ *
+ * @param {number} recipeId - Spoonacular recipe ID (positive integer)
+ * @returns {Promise<{
+ *   success: boolean,
+ *   id: number, title: string, image: string,
+ *   readyInMinutes: number, servings: number, summary: string,
+ *   extendedIngredients: Array<{id, name, amount, unit, image}>,
+ *   analyzedInstructions: Array<{name, steps: Array<{number, step}>}>,
+ *   nutrition: {calories, protein, carbs, fat}
+ * }>}
  */
 async function getRecipeDetails(recipeId) {
+    const id = parseInt(recipeId, 10);
+    if (!id || id <= 0) throw new Error('getRecipeDetails: recipeId must be a positive integer.');
     return await apiFetch(ENDPOINTS.API, {
-        action:    'get_recipe_details',
-        recipe_id: recipeId,
+        action: 'get_recipe_details',
+        recipe_id: id,
+    });
+}
+
+
+/**
+ * saveRecipe — Persist a recipe to the user's saved_recipes table.
+ * Handles the unique_user_recipe constraint gracefully (duplicate = not an error).
+ *
+ * @param {Object} recipe - Full recipe object from getRecipeDetails()
+ * @returns {Promise<{success: boolean, message?: string, duplicate?: boolean}>}
+ */
+async function saveRecipe(recipe) {
+    const id = parseInt(recipe.id, 10);
+    if (!id || id <= 0) throw new Error('saveRecipe: invalid recipe id.');
+
+    // Summarise long arrays into JSON strings for the VARCHAR columns
+    const ingredientsSummary = (recipe.extendedIngredients ?? [])
+        .map(i => `${i.amount} ${i.unit} ${i.name}`.trim())
+        .join(', ')
+        .substring(0, 198); // DB column is VARCHAR(200)
+
+    const instructionsSummary = (recipe.analyzedInstructions ?? [])
+        .flatMap(s => s.steps ?? [])
+        .map(s => s.step)
+        .join(' ')
+        .substring(0, 198);
+
+    const descriptionSummary = (recipe.summary ?? '').substring(0, 198);
+
+    return await apiFetch(ENDPOINTS.DB, {
+        action: 'save_recipe',
+        api_id: id,
+        title: recipe.title ?? '',
+        image_url: recipe.image ?? '',
+        description: descriptionSummary,
+        ingredients: ingredientsSummary,
+        instructions: instructionsSummary,
+        calories: recipe.nutrition?.calories ?? 0,
+        protein: recipe.nutrition?.protein ?? 0,
+        carbs: recipe.nutrition?.carbs ?? 0,
+        fat: recipe.nutrition?.fat ?? 0,
+    });
+}
+
+/**
+ * fetchSavedRecipes — Retrieve all recipes saved by the current user.
+ * @returns {Promise<Array<{id, api_id, title, image_url, calories, protein, carbs, fat}>>}
+ */
+async function fetchSavedRecipes() {
+    return await apiFetch(ENDPOINTS.DB, {
+        action: 'get_saved_recipes',
+    });
+}
+
+/**
+ * deleteSavedRecipe — Remove a recipe from the user's saved_recipes table.
+ * @param {number|string} id - The internal saved_recipes database ID
+ * @returns {Promise<{success: boolean, message?: string}>}
+ */
+async function deleteSavedRecipe(id) {
+    return await apiFetch(ENDPOINTS.DB, {
+        action: 'delete_saved_recipe',
+        id: id,
     });
 }
 
@@ -314,12 +414,30 @@ async function uploadMealImage(mealData) {
     formData.append('meal_image', mealData.file);
 
     // Append metadata fields
-    formData.append('action',    'upload_meal');
+    formData.append('action', 'upload_meal');
     formData.append('meal_name', mealData.mealName ?? '');
-    formData.append('notes',     mealData.notes    ?? '');
-    formData.append('calories',  mealData.calories ?? '');
-    formData.append('log_date',  mealData.date     ?? '');
+    formData.append('notes', mealData.notes ?? '');
+    formData.append('calories', mealData.calories ?? 0);
+    formData.append('protein', mealData.protein ?? 0);
+    formData.append('carbs', mealData.carbs ?? 0);
+    formData.append('fat', mealData.fat ?? 0);
+    formData.append('log_date', mealData.date ?? '');
 
+    return await apiFetchForm(ENDPOINTS.UPLOAD, formData);
+}
+
+/**
+ * uploadAvatar — Upload a new profile photo for the logged-in user.
+ * Sends the file as multipart/form-data to Upload.php with action=upload_avatar.
+ * Upload.php will validate type, size, store the file, and update avatar_path in users table.
+ *
+ * @param {File} file - The image file selected by the user
+ * @returns {Promise<{success: boolean, avatar_path?: string, message?: string}>}
+ */
+async function uploadAvatar(file) {
+    const formData = new FormData();
+    formData.append('avatar_image', file);  // distinct field name from meal uploads
+    formData.append('action', 'upload_avatar');
     return await apiFetchForm(ENDPOINTS.UPLOAD, formData);
 }
 
@@ -337,7 +455,7 @@ async function uploadMealImage(mealData) {
 async function fetchCookingLog(limit = 20) {
     return await apiFetch(ENDPOINTS.DB, {
         action: 'get_cooking_log',
-        limit:  limit,
+        limit: limit,
     });
 }
 
@@ -349,7 +467,7 @@ async function fetchCookingLog(limit = 20) {
 async function deleteLogEntry(id) {
     return await apiFetch(ENDPOINTS.DB, {
         action: 'delete_log_entry',
-        id:     id,
+        id: id,
     });
 }
 
@@ -360,15 +478,28 @@ async function deleteLogEntry(id) {
 ============================================================ */
 
 /**
+ * fetchUserInfo — Retrieve the logged-in user's profile data.
+ * Calls the get_user_info action which reads name, email, and avatar_path
+ * from the users table using a PDO prepared statement.
+ *
+ * @returns {Promise<{success: boolean, username: string, email: string, avatar_path: string}>}
+ */
+async function fetchUserInfo() {
+    return await apiFetch(ENDPOINTS.DB, {
+        action: 'get_user_info',
+    });
+}
+
+/**
  * updateProfile — Save changes to user profile.
  * @param {Object} data - { name, email, password? }
  * @returns {Promise<{success: boolean, message?: string}>}
  */
 async function updateProfile(data) {
     return await apiFetch(ENDPOINTS.DB, {
-        action:   'update_profile',
-        name:     data.name,
-        email:    data.email,
+        action: 'update_profile',
+        name: data.name,
+        email: data.email,
         password: data.password ?? '', // Only passed if user wants to change it
     });
 }
@@ -380,10 +511,10 @@ async function updateProfile(data) {
  */
 async function updateNutritionGoals(goals) {
     return await apiFetch(ENDPOINTS.DB, {
-        action:   'update_nutrition_goals',
+        action: 'update_nutrition_goals',
         calories: goals.calories,
-        protein:  goals.protein,
-        carbs:    goals.carbs,
-        fat:      goals.fat,
+        protein: goals.protein,
+        carbs: goals.carbs,
+        fat: goals.fat,
     });
 }

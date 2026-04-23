@@ -27,12 +27,14 @@ const AppState = {
   recipeResults: [],
   logEntries: [],
   selectedIngredients: [],
+  searchMode: 'ingredients',
+  savedRecipes: [],
 };
 
 
 /* ============================================================
    1. INITIALISATION
-============================================================ */
+=============================================================== */
 
 /**
  * initApp — Bootstrap the SPA.
@@ -90,14 +92,14 @@ async function loadView(view) {
 
   // Render the view
   switch (view) {
-    case 'dashboard':   appContent.innerHTML = renderDashboard();   break;
-    case 'pantry':      appContent.innerHTML = renderPantry();       break;
-    case 'recipes':     appContent.innerHTML = renderRecipes();      break;
-    case 'cooking-log': appContent.innerHTML = renderCookingLog();   break;
-    case 'profile':     appContent.innerHTML = renderProfile();      break;
-    case 'login':       appContent.innerHTML = renderLogin();        break;
-    case 'signup':      appContent.innerHTML = renderRegister();     break;
-    default:            appContent.innerHTML = renderNotFound();     break;
+    case 'dashboard': appContent.innerHTML = renderDashboard(); break;
+    case 'pantry': appContent.innerHTML = renderPantry(); break;
+    case 'recipes': appContent.innerHTML = renderRecipes(); break;
+    case 'cooking-log': appContent.innerHTML = renderCookingLog(); break;
+    case 'profile': appContent.innerHTML = renderProfile(); break;
+    case 'login': appContent.innerHTML = renderLogin(); break;
+    case 'signup': appContent.innerHTML = renderRegister(); break;
+    default: appContent.innerHTML = renderNotFound(); break;
   }
 
   // Fade in
@@ -292,18 +294,28 @@ function renderRecipes() {
         <p style="color:var(--color-charcoal-light);margin-top:var(--space-2);">
           Tell us what's in your pantry — we'll find matching recipes.
         </p>
-        <div class="recipe-search-form">
+        <!-- Search Mode Toggle -->
+        <div style="display:flex; justify-content:center; gap: 16px; margin: 20px 0;">
+          <label style="cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:500;">
+            <input type="radio" name="search-mode" value="ingredients" ${AppState.searchMode === 'ingredients' ? 'checked' : ''}> By Ingredients
+          </label>
+          <label style="cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:500;">
+            <input type="radio" name="search-mode" value="name" ${AppState.searchMode === 'name' ? 'checked' : ''}> By Name
+          </label>
+        </div>
+
+        <div class="recipe-search-form" id="search-input-wrapper">
           <input
             type="text"
             class="form-input recipe-search-input"
             id="recipe-search-input"
-            placeholder="Add an ingredient (e.g. chicken, tomato)…"
-            aria-label="Ingredient search"
+            placeholder="${AppState.searchMode === 'ingredients' ? 'Add an ingredient (e.g. chicken, tomato)…' : 'Search by meal name (e.g. pasta)…'}"
+            aria-label="Recipe search"
           >
-          <button class="btn btn-primary" id="recipe-add-ingredient-btn">Add</button>
+          <button class="btn btn-primary" id="recipe-add-ingredient-btn" style="display: ${AppState.searchMode === 'ingredients' ? 'block' : 'none'};">Add</button>
         </div>
         <!-- Selected ingredient chips -->
-        <div class="ingredient-chips" id="ingredient-chips">
+        <div class="ingredient-chips" id="ingredient-chips" style="display: ${AppState.searchMode === 'ingredients' ? 'flex' : 'none'};">
           <!-- Populated dynamically -->
         </div>
         <div style="margin-top:var(--space-5);display:flex;gap:var(--space-3);justify-content:center;flex-wrap:wrap;">
@@ -316,6 +328,16 @@ function renderRecipes() {
       <div id="recipe-results-section">
         <div id="recipe-results-grid" class="recipes-grid">
           <!-- Populated after search -->
+        </div>
+      </div>
+
+      <hr style="margin: var(--space-8) 0; border: none; border-top: 1px solid var(--color-gray-dark);">
+
+      <!-- Saved Recipes section -->
+      <div id="saved-recipes-section">
+        <h2 class="section-title" style="margin-bottom: var(--space-4);">My Saved Recipes</h2>
+        <div id="saved-recipes-grid" class="recipes-grid">
+          <!-- Populated by hydrateRecipes -->
         </div>
       </div>
 
@@ -378,6 +400,18 @@ function renderCookingLog() {
                 <input type="number" class="form-input" id="meal-calories" placeholder="e.g. 450" min="0" max="9999">
               </div>
               <div class="form-group">
+                <label class="form-label" for="meal-protein">Protein (g)</label>
+                <input type="number" class="form-input" id="meal-protein" placeholder="e.g. 25" min="0" max="9999">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="meal-carbs">Carbs (g)</label>
+                <input type="number" class="form-input" id="meal-carbs" placeholder="e.g. 50" min="0" max="9999">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="meal-fats">Fats (g)</label>
+                <input type="number" class="form-input" id="meal-fats" placeholder="e.g. 20" min="0" max="9999">
+              </div>
+              <div class="form-group">
                 <label class="form-label" for="meal-date">Date</label>
                 <input type="date" class="form-input" id="meal-date" value="${new Date().toISOString().split('T')[0]}">
               </div>
@@ -412,17 +446,37 @@ function renderCookingLog() {
 
 /**
  * renderProfile — Returns HTML string for the Profile view.
+ * Includes a clickable avatar ring so the user can upload a new photo inline.
  */
 function renderProfile() {
   return `
     <div class="view-wrapper view-enter">
 
       <div class="profile-header">
-        <div class="profile-avatar-lg" id="profile-avatar">U</div>
+        <!-- Clickable avatar that opens a hidden file input -->
+        <div class="profile-avatar-wrap">
+          <div class="profile-avatar-lg" id="profile-avatar">U</div>
+          <button class="avatar-change-btn" id="avatar-change-btn"
+            title="Change profile photo" aria-label="Change profile photo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </button>
+          <!-- Hidden file input; triggered by the button above -->
+          <input type="file" id="profile-avatar-input" accept="image/jpeg,image/png,image/webp"
+            style="display:none;" aria-label="Upload profile photo">
+        </div>
         <div class="profile-info">
           <h2 id="profile-name">User Name</h2>
           <p class="profile-email" id="profile-email">user@example.com</p>
-          <span class="badge badge-emerald mt-4"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Active Member</span>
+          <span class="badge badge-emerald mt-4">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg> Active Member
+          </span>
+          <p class="text-muted text-sm" id="avatar-upload-status" style="margin-top:var(--space-2);"></p>
         </div>
       </div>
 
@@ -517,11 +571,14 @@ async function hydrateView(view) {
     case 'pantry':
       await hydratePantry();
       break;
+    case 'recipes':
+      await hydrateRecipes();
+      break;
     case 'cooking-log':
       await hydrateLog();
       break;
     case 'profile':
-      hydrateProfile();
+      await hydrateProfile();
       break;
   }
 }
@@ -542,9 +599,21 @@ async function hydrateDashboard() {
     setInnerText('dash-log-num', data.log_count ?? 0);
 
     // Nutrition progress
-    const goals = AppState.nutritionGoals;
+    const goals = data.nutrition_goals ?? AppState.nutritionGoals;
+    if (data.nutrition_goals) {
+      AppState.nutritionGoals = data.nutrition_goals;
+    }
     const today = data.nutrition_today ?? AppState.nutritionToday;
-    renderNutritionProgress(today, goals);
+
+    // Keep AppState in sync so other views can read fresh totals
+    AppState.nutritionToday = {
+      calories: today.calories ?? 0,
+      protein: today.protein ?? 0,
+      carbs: today.carbs ?? 0,
+      fat: today.fat ?? 0,
+    };
+
+    renderNutritionProgress(AppState.nutritionToday, goals);
 
     // Expiring list
     renderExpiringList(data.expiring_items ?? []);
@@ -567,32 +636,86 @@ async function hydratePantry() {
   }
 }
 
-async function hydrateLog() {
+async function hydrateRecipes() {
+  const grid = document.getElementById('saved-recipes-grid');
+  if (!grid) return;
+  grid.innerHTML = `<div class="skeleton" style="width:100%;height:200px;border-radius:12px;"></div>`;
   try {
-    // Log entries would be fetched from a future DB_Ops.php endpoint
-    const entries = AppState.logEntries;
-    renderLogEntries(entries);
+    const recipes = await fetchSavedRecipes();
+    AppState.savedRecipes = recipes ?? [];
+    renderSavedRecipeCards(AppState.savedRecipes);
   } catch (err) {
-    console.error('[hydrateLog]', err);
+    console.error('[hydrateRecipes]', err);
+    grid.innerHTML = `<p class="text-danger">Failed to load saved recipes.</p>`;
   }
 }
 
-function hydrateProfile() {
-  // In a real app, fetch from session / DB_Ops.php
-  // For now, populate with session data if available
+async function hydrateLog() {
+  try {
+    const entries = await fetchCookingLog(20);
+    AppState.logEntries = entries ?? [];
+    renderLogEntries(AppState.logEntries);
+  } catch (err) {
+    console.error('[hydrateLog]', err);
+    const grid = document.getElementById('log-entries-grid');
+    if (grid) grid.innerHTML = `<p class="text-muted text-sm">Could not load recent meals. Please try again.</p>`;
+  }
+}
+
+async function hydrateProfile() {
   const nameEl = document.getElementById('profile-edit-name');
   const emailEl = document.getElementById('profile-edit-email');
   const avEl = document.getElementById('profile-avatar');
   const nameH2 = document.getElementById('profile-name');
-
-  // Safe defaults (XSS-safe: setting .value / .textContent, not innerHTML)
-  if (nameEl) nameEl.value = 'Demo User';
-  if (emailEl) emailEl.value = 'demo@ingredio.app';
-  if (nameH2) nameH2.textContent = 'Demo User';
-  if (avEl) avEl.textContent = 'D';
-
   const emailDisplay = document.getElementById('profile-email');
-  if (emailDisplay) emailDisplay.textContent = 'demo@ingredio.app';
+
+  try {
+    const data = await fetchUserInfo();
+    if (!data || !data.success) throw new Error('Profile fetch failed');
+
+    // Sanitize before injecting — use .value / .textContent to avoid XSS
+    const name = sanitizeOutput(data.name ?? '');
+    const email = sanitizeOutput(data.email ?? '');
+    const avatar = data.avatar_path ?? '';
+
+    // Populate display elements (header)
+    if (nameH2) nameH2.textContent = data.username;
+    if (emailDisplay) emailDisplay.textContent = email;
+
+    // Populate avatar initial (first character of display name)
+    if (avEl) {
+      if (avatar && !avatar.includes('default-avatar')) {
+        // If a real avatar image exists, render it as an <img> inside the circle
+        avEl.innerHTML = `<img src="${sanitizeOutput(avatar)}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+      } else {
+        avEl.textContent = name.charAt(0).toUpperCase() || 'U';
+      }
+    }
+
+    // Pre-fill edit form inputs
+    if (nameEl) nameEl.value = name;
+    if (emailEl) emailEl.value = email;
+
+    // Pre-fill nutrition goals
+    if (data.nutrition_goals) {
+      AppState.nutritionGoals = data.nutrition_goals;
+      const gCal = document.getElementById('goal-calories');
+      const gPro = document.getElementById('goal-protein');
+      const gCrb = document.getElementById('goal-carbs');
+      const gFat = document.getElementById('goal-fat');
+      if (gCal) gCal.value = data.nutrition_goals.calories;
+      if (gPro) gPro.value = data.nutrition_goals.protein;
+      if (gCrb) gCrb.value = data.nutrition_goals.carbs;
+      if (gFat) gFat.value = data.nutrition_goals.fat;
+    }
+
+  } catch (err) {
+    // Graceful fallback — leave placeholder text visible, log for debugging
+    console.warn('[hydrateProfile] Could not fetch user info:', err);
+    if (nameH2) nameH2.textContent = 'User';
+    if (emailDisplay) emailDisplay.textContent = '';
+    if (avEl) avEl.textContent = 'U';
+  }
 }
 
 
@@ -760,6 +883,64 @@ function renderRecipeCards(recipes) {
   }).join('');
 }
 
+function renderSavedRecipeCards(recipes) {
+  const grid = document.getElementById('saved-recipes-grid');
+  if (!grid) return;
+
+  if (!recipes || recipes.length === 0) {
+    grid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1;">
+          <div class="empty-state-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+          <h3>No saved recipes</h3>
+          <p>Search for recipes and save them here.</p>
+        </div>`;
+    return;
+  }
+
+  grid.innerHTML = recipes.map(r => {
+    const image = r.image_url ? `<img class="recipe-card-image" src="${sanitizeOutput(r.image_url)}" alt="${sanitizeOutput(r.title ?? '')}" loading="lazy">` : `<div class="recipe-card-image-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg></div>`;
+    const cals = r.calories ?? '—';
+    const prot = r.protein ?? '—';
+    const fat = r.fat ?? '—';
+
+    return `
+        <div class="recipe-card" data-recipe-id="${sanitizeOutput(String(r.api_id ?? ''))}">
+          ${image}
+          <div class="recipe-card-body">
+            <h3 class="recipe-card-title">${sanitizeOutput(r.title ?? 'Untitled Recipe')}</h3>
+            <div class="recipe-macros">
+              <div class="recipe-macro">
+                <div class="recipe-macro-val">${sanitizeOutput(String(cals))}</div>
+                <div class="recipe-macro-label">kcal</div>
+              </div>
+              <div class="recipe-macro">
+                <div class="recipe-macro-val">${sanitizeOutput(String(prot))}g</div>
+                <div class="recipe-macro-label">Protein</div>
+              </div>
+              <div class="recipe-macro">
+                <div class="recipe-macro-val">${sanitizeOutput(String(fat))}g</div>
+                <div class="recipe-macro-label">Fat</div>
+              </div>
+            </div>
+            <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+              <button class="btn btn-danger btn-sm delete-saved-recipe-btn" data-id="${sanitizeOutput(String(r.id))}" aria-label="Delete ${sanitizeOutput(r.title ?? '')}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg> Delete
+              </button>
+            </div>
+          </div>
+        </div>`;
+  }).join('');
+
+  // Bind delete buttons
+  document.querySelectorAll('.delete-saved-recipe-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // prevent opening the recipe modal
+      const id = e.currentTarget.dataset.id;
+      confirmDeleteSavedRecipe(id);
+    });
+  });
+}
+
 function renderLogEntries(entries) {
   const grid = document.getElementById('log-entries-grid');
   if (!grid) return;
@@ -792,6 +973,254 @@ function renderRecipeSkeletons(count = 6) {
         <div class="skeleton skeleton-text" style="width:60%;"></div>
       </div>
     </div>`).join('');
+}
+
+
+/* ============================================================
+   5b. RECIPE DETAIL MODAL
+============================================================ */
+
+/**
+ * showRecipeDetails — Fetch full recipe and open the detail modal.
+ * Shows a skeleton loader in the modal while the API responds.
+ * @param {number} recipeId - Spoonacular recipe ID
+ * @param {string} source - 'api' or 'local'
+ */
+async function showRecipeDetails(recipeId, source = 'api') {
+  const id = parseInt(recipeId, 10);
+  if (!id || id <= 0) {
+    showToast('error', 'Invalid Recipe', 'Could not load this recipe.');
+    return;
+  }
+
+  // Open modal immediately with a skeleton loader
+  openModal(`
+    <div class="modal-header">
+      <h3 id="modal-title">Loading Recipe…</h3>
+    </div>
+    <div class="modal-body" id="recipe-detail-body">
+      <div class="skeleton skeleton-title" style="height:200px;border-radius:12px;margin-bottom:20px;"></div>
+      <div class="skeleton skeleton-text" style="width:60%;"></div>
+      <div class="skeleton skeleton-text" style="width:80%;"></div>
+      <div class="skeleton skeleton-text" style="width:50%;"></div>
+    </div>`);
+
+  try {
+    let recipe;
+    
+    if (source === 'local') {
+      const saved = AppState.savedRecipes.find(r => String(r.api_id) === String(id) || String(r.id) === String(id));
+      if (!saved) throw new Error('Recipe not found in saved list.');
+      
+      recipe = {
+        success: true,
+        id: saved.api_id,
+        title: saved.title,
+        image: saved.image_url,
+        summary: saved.description,
+        readyInMinutes: '?', 
+        servings: '?', 
+        nutrition: {
+          calories: saved.calories,
+          protein: saved.protein,
+          carbs: saved.carbs,
+          fat: saved.fat
+        },
+        extendedIngredients: [],
+        analyzedInstructions: []
+      };
+
+      try {
+        const ings = JSON.parse(saved.ingredients);
+        recipe.extendedIngredients = ings.map(i => typeof i === 'string' ? { original: i } : i);
+      } catch(e) {
+        recipe.extendedIngredients = (saved.ingredients || '').split(',').map(i => ({ original: i.trim() }));
+      }
+
+      try {
+        const insts = JSON.parse(saved.instructions);
+        recipe.analyzedInstructions = insts;
+      } catch(e) {
+        recipe.analyzedInstructions = [{ steps: [{ step: saved.instructions }] }];
+      }
+    } else {
+      recipe = await getRecipeDetails(id);
+    }
+
+    if (!recipe || !recipe.success) {
+      throw new Error(recipe?.message ?? 'Could not load recipe details.');
+    }
+
+    // Re-render modal with full data
+    const content = document.getElementById('modal-content');
+    if (content) content.innerHTML = renderRecipeDetailModal(recipe);
+
+    // Bind the Save button
+    document.getElementById('save-recipe-btn')?.addEventListener('click', () => handleSaveRecipe(recipe));
+
+  } catch (err) {
+    console.error('[showRecipeDetails]', err);
+    const body = document.getElementById('recipe-detail-body');
+    if (body) {
+      body.innerHTML = `<p class="text-muted text-sm" style="padding:20px;">
+        Could not load recipe details. ${sanitizeOutput(err.message)}
+      </p>`;
+    } else {
+      closeModal();
+      showToast('error', 'Load Failed', err.message ?? 'Could not load recipe details.');
+    }
+  }
+}
+
+/**
+ * renderRecipeDetailModal — Build the full recipe detail HTML for the modal.
+ * All user-visible strings are run through sanitizeOutput() for XSS prevention.
+ * @param {Object} recipe - Mapped recipe object from API_Ops.php
+ * @returns {string} HTML string
+ */
+function renderRecipeDetailModal(recipe) {
+  const title = sanitizeOutput(recipe.title ?? 'Untitled Recipe');
+  const image = recipe.image ? sanitizeOutput(recipe.image) : '';
+  const time = sanitizeOutput(String(recipe.readyInMinutes ?? '?'));
+  const servings = sanitizeOutput(String(recipe.servings ?? '?'));
+  const summary = sanitizeOutput(recipe.summary ?? '');
+
+  // Nutrition dashboard
+  const n = recipe.nutrition ?? {};
+  const macros = [
+    { label: 'Calories', value: n.calories ?? 0, unit: 'kcal', color: '#2ECC71' },
+    { label: 'Protein', value: n.protein ?? 0, unit: 'g', color: '#3498DB' },
+    { label: 'Carbs', value: n.carbs ?? 0, unit: 'g', color: '#F39C12' },
+    { label: 'Fat', value: n.fat ?? 0, unit: 'g', color: '#E74C3C' },
+  ];
+
+  const nutritionHtml = `
+    <div class="recipe-detail-macros">
+      ${macros.map(m => `
+        <div class="recipe-detail-macro-card" style="border-top:3px solid ${m.color};">
+          <div class="recipe-detail-macro-val">${sanitizeOutput(String(m.value))}</div>
+          <div class="recipe-detail-macro-unit">${sanitizeOutput(m.unit)}</div>
+          <div class="recipe-detail-macro-label">${sanitizeOutput(m.label)}</div>
+        </div>`).join('')}
+    </div>`;
+
+  // Ingredients list
+  const ingredients = recipe.extendedIngredients ?? [];
+  const ingredientsHtml = ingredients.length === 0
+    ? `<p class="text-muted text-sm">No ingredient data available.</p>`
+    : `<ul class="recipe-ingredients-list">
+        ${ingredients.map(i => `
+          <li class="recipe-ingredient-item">
+            <span class="recipe-ingredient-dot"></span>
+            <span>${sanitizeOutput(String(i.amount ?? ''))} ${sanitizeOutput(i.unit ?? '')}
+              <strong>${sanitizeOutput(i.name ?? '')}</strong>
+            </span>
+          </li>`).join('')}
+       </ul>`;
+
+  // Instructions
+  const instructionSections = recipe.analyzedInstructions ?? [];
+  let instructionsHtml = '';
+  if (instructionSections.length === 0) {
+    instructionsHtml = `<p class="text-muted text-sm">No instructions available.</p>`;
+  } else {
+    instructionsHtml = instructionSections.map(section => {
+      const sectionName = section.name ? `<h5 class="instructions-section-title">${sanitizeOutput(section.name)}</h5>` : '';
+      const steps = (section.steps ?? []).map(s => `
+        <li class="instruction-step">
+          <span class="step-number">${sanitizeOutput(String(s.number))}</span>
+          <span class="step-text">${sanitizeOutput(s.step ?? '')}</span>
+        </li>`).join('');
+      return `${sectionName}<ol class="instructions-list">${steps}</ol>`;
+    }).join('');
+  }
+
+  return `
+    <div class="modal-header recipe-detail-header" style="padding-bottom:0;">
+      ${image ? `<img src="${image}" alt="${title}" class="recipe-detail-hero-img" loading="lazy">` : ''}
+      <div class="recipe-detail-title-row">
+        <h3 id="modal-title" class="recipe-detail-title">${title}</h3>
+        <div class="recipe-detail-meta-row">
+          <span class="recipe-detail-badge">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ${time} min
+          </span>
+          <span class="recipe-detail-badge">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            ${servings} servings
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-body recipe-detail-body">
+
+      ${summary ? `<p class="recipe-detail-summary">${summary}</p>` : ''}
+
+      <section class="recipe-detail-section">
+        <h4 class="recipe-detail-section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Nutrition Dashboard
+        </h4>
+        ${nutritionHtml}
+      </section>
+
+      <section class="recipe-detail-section">
+        <h4 class="recipe-detail-section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 2l1.5 5H21l-3 9H6L3 2z"/><circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg>
+          Ingredients <span class="recipe-count-badge">${sanitizeOutput(String(ingredients.length))}</span>
+        </h4>
+        ${ingredientsHtml}
+      </section>
+
+      <section class="recipe-detail-section">
+        <h4 class="recipe-detail-section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Instructions
+        </h4>
+        ${instructionsHtml}
+      </section>
+
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" id="save-recipe-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save Recipe
+      </button>
+    </div>`;
+}
+
+/**
+ * handleSaveRecipe — Persist the currently-viewed recipe via saveRecipe().
+ * @param {Object} recipe - Full recipe object from getRecipeDetails()
+ */
+async function handleSaveRecipe(recipe) {
+  const btn = document.getElementById('save-recipe-btn');
+  setButtonLoading(btn, true);
+
+  try {
+    const result = await saveRecipe(recipe);
+    if (result && result.success) {
+      if (result.duplicate) {
+        showToast('info', 'Already Saved', `"${sanitizeOutput(recipe.title ?? 'Recipe')}" is already in your saved recipes.`);
+      } else {
+        showToast('success', 'Recipe Saved!', `"${sanitizeOutput(recipe.title ?? 'Recipe')}" has been added to your saved recipes.`);
+        if (btn) {
+          btn.textContent = '✓ Saved';
+          btn.disabled = true;
+        }
+      }
+    } else {
+      showToast('error', 'Save Failed', result?.message ?? 'Could not save recipe. Please try again.');
+    }
+  } catch (err) {
+    console.error('[handleSaveRecipe]', err);
+    showToast('error', 'Error', 'An unexpected error occurred while saving the recipe.');
+  } finally {
+    if (btn && !btn.disabled) setButtonLoading(btn, false);
+  }
 }
 
 
@@ -956,6 +1385,27 @@ function confirmDeleteIngredient(id) {
   });
 }
 
+function confirmDeleteSavedRecipe(id) {
+  openModal(`
+    <div class="modal-header">
+      <h3 id="modal-title">Remove Recipe</h3>
+    </div>
+    <div class="modal-body">
+      <p>Are you sure you want to remove this recipe from your saved list?</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="cancel-recipe-delete-btn">Cancel</button>
+      <button class="btn btn-danger" id="confirm-recipe-delete-btn" data-id="${sanitizeOutput(String(id))}">Remove</button>
+    </div>`);
+
+  document.getElementById('cancel-recipe-delete-btn')?.addEventListener('click', closeModal);
+  document.getElementById('confirm-recipe-delete-btn')?.addEventListener('click', async (e) => {
+    const recipeId = e.currentTarget.dataset.id;
+    closeModal();
+    await handleDeleteSavedRecipe(recipeId);
+  });
+}
+
 
 /* ============================================================
    7. CRUD HANDLERS
@@ -1065,6 +1515,21 @@ async function handleDeleteIngredient(id) {
   }
 }
 
+async function handleDeleteSavedRecipe(id) {
+  try {
+    const result = await deleteSavedRecipe(id);
+    if (result && result.success) {
+      showToast('success', 'Recipe Removed', 'The recipe has been removed from your saved list.');
+      await hydrateRecipes();
+    } else {
+      showToast('error', 'Remove Failed', result?.message ?? 'Could not remove recipe.');
+    }
+  } catch (err) {
+    console.error('[handleDeleteSavedRecipe]', err);
+    showToast('error', 'Error', 'An unexpected error occurred.');
+  }
+}
+
 
 /* ============================================================
    8. RECIPE SEARCH HANDLERS
@@ -1104,16 +1569,28 @@ function renderIngredientChips() {
 }
 
 async function handleSearchRecipes() {
-  if (AppState.selectedIngredients.length === 0) {
-    showToast('warning', 'No Ingredients', 'Add at least one ingredient to search recipes.');
-    return;
+  let query = '';
+  
+  if (AppState.searchMode === 'ingredients') {
+    if (AppState.selectedIngredients.length === 0) {
+      showToast('warning', 'No Ingredients', 'Add at least one ingredient to search recipes.');
+      return;
+    }
+    query = AppState.selectedIngredients.join(',');
+  } else {
+    const input = document.getElementById('recipe-search-input');
+    query = input?.value.trim() ?? '';
+    if (!query) {
+      showToast('warning', 'Empty Search', 'Enter a meal name to search.');
+      return;
+    }
   }
 
   renderRecipeSkeletons();
   showLoader();
 
   try {
-    const results = await searchRecipes(AppState.selectedIngredients.join(','));
+    const results = await searchRecipes(query, AppState.searchMode);
     AppState.recipeResults = results ?? [];
     renderRecipeCards(AppState.recipeResults);
   } catch (err) {
@@ -1323,12 +1800,39 @@ function bindViewEvents(view) {
     }
 
     case 'recipes': {
+      // Search Mode Toggle
+      document.querySelectorAll('input[name="search-mode"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          AppState.searchMode = e.target.value;
+          const input = document.getElementById('recipe-search-input');
+          const addBtn = document.getElementById('recipe-add-ingredient-btn');
+          const chips = document.getElementById('ingredient-chips');
+          
+          if (AppState.searchMode === 'ingredients') {
+            if (input) input.placeholder = 'Add an ingredient (e.g. chicken, tomato)…';
+            if (addBtn) addBtn.style.display = 'block';
+            if (chips) chips.style.display = 'flex';
+          } else {
+            if (input) input.placeholder = 'Search by meal name (e.g. pasta)…';
+            if (addBtn) addBtn.style.display = 'none';
+            if (chips) chips.style.display = 'none';
+          }
+        });
+      });
+
       // Add ingredient chip on button click
       document.getElementById('recipe-add-ingredient-btn')?.addEventListener('click', handleAddRecipeIngredient);
 
       // Add on Enter key
       document.getElementById('recipe-search-input')?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); handleAddRecipeIngredient(); }
+        if (e.key === 'Enter') { 
+          e.preventDefault(); 
+          if (AppState.searchMode === 'ingredients') {
+            handleAddRecipeIngredient(); 
+          } else {
+            handleSearchRecipes();
+          }
+        }
       });
 
       // Search recipes
@@ -1336,6 +1840,27 @@ function bindViewEvents(view) {
 
       // Use pantry
       document.getElementById('use-pantry-btn')?.addEventListener('click', handleUsePantry);
+
+      // Recipe card click — delegate on results grid (populated after search)
+      document.getElementById('recipe-results-grid')?.addEventListener('click', (e) => {
+        const card = e.target.closest('.recipe-card[data-recipe-id]');
+        if (card) {
+          const recipeId = parseInt(card.dataset.recipeId, 10);
+          if (recipeId > 0) showRecipeDetails(recipeId, 'api');
+        }
+      });
+
+      // Saved Recipe card click — delegate on saved recipes grid
+      document.getElementById('saved-recipes-grid')?.addEventListener('click', (e) => {
+        // Exclude delete button clicks
+        if (e.target.closest('.delete-saved-recipe-btn')) return;
+        
+        const card = e.target.closest('.recipe-card[data-recipe-id]');
+        if (card) {
+          const recipeId = parseInt(card.dataset.recipeId, 10);
+          if (recipeId > 0) showRecipeDetails(recipeId, 'local');
+        }
+      });
       break;
     }
 
@@ -1378,6 +1903,16 @@ function bindViewEvents(view) {
     case 'profile': {
       document.getElementById('save-profile-btn')?.addEventListener('click', handleSaveProfile);
       document.getElementById('save-goals-btn')?.addEventListener('click', handleSaveGoals);
+
+      // Avatar upload: clicking the camera button opens the hidden file input
+      document.getElementById('avatar-change-btn')?.addEventListener('click', () => {
+        document.getElementById('profile-avatar-input')?.click();
+      });
+      document.getElementById('profile-avatar-input')?.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (file) handleAvatarUpload(file);
+      });
+
       renderThemeSelector();
       break;
     }
@@ -1418,14 +1953,15 @@ async function handleLogout() {
   }
 }
 
-function handleSaveProfile() {
+async function handleSaveProfile() {
   const name = document.getElementById('profile-edit-name')?.value.trim() ?? '';
   const email = document.getElementById('profile-edit-email')?.value.trim() ?? '';
   const password = document.getElementById('profile-edit-password')?.value ?? '';
 
+  // ── Client-side validation ──────────────────────────
   let valid = true;
-  if (!name) {
-    showEl(document.getElementById('profile-name-error'), 'Name is required.');
+  if (name.length < 3) {
+    showEl(document.getElementById('profile-name-error'), 'Name must be at least 3 characters.');
     document.getElementById('profile-edit-name')?.classList.add('error');
     valid = false;
   } else {
@@ -1440,24 +1976,130 @@ function handleSaveProfile() {
     hideEl(document.getElementById('profile-email-error'));
     document.getElementById('profile-edit-email')?.classList.remove('error');
   }
+  if (password && password.length < 8) {
+    showToast('warning', 'Weak Password', 'New password must be at least 8 characters.');
+    valid = false;
+  }
   if (!valid) return;
 
-  showToast('success', 'Profile Saved', 'Your profile has been updated.');
-  // In real app: call updateProfile({ name, email, password }) from API_Ops.js
+  const btn = document.getElementById('save-profile-btn');
+  setButtonLoading(btn, true);
+
+  try {
+    const result = await updateProfile({ name, email, password });
+    if (result && result.success) {
+      // Refresh displayed name in profile header
+      const nameH2 = document.getElementById('profile-name');
+      if (nameH2) nameH2.textContent = sanitizeOutput(name);
+      // Clear password field after successful save
+      const pwEl = document.getElementById('profile-edit-password');
+      if (pwEl) pwEl.value = '';
+      showToast('success', 'Profile Saved', 'Your profile has been updated successfully.');
+    } else {
+      showToast('error', 'Save Failed', result?.message ?? 'Could not update profile.');
+    }
+  } catch (err) {
+    console.error('[handleSaveProfile]', err);
+    showToast('error', 'Error', 'An unexpected error occurred.');
+  } finally {
+    setButtonLoading(btn, false);
+  }
 }
 
-function handleSaveGoals() {
-  const calories = parseInt(document.getElementById('goal-calories')?.value ?? '0');
-  const protein = parseInt(document.getElementById('goal-protein')?.value ?? '0');
-  const carbs = parseInt(document.getElementById('goal-carbs')?.value ?? '0');
-  const fat = parseInt(document.getElementById('goal-fat')?.value ?? '0');
+async function handleSaveGoals() {
+  const calories = parseInt(document.getElementById('goal-calories')?.value ?? '0', 10);
+  const protein = parseInt(document.getElementById('goal-protein')?.value ?? '0', 10);
+  const carbs = parseInt(document.getElementById('goal-carbs')?.value ?? '0', 10);
+  const fat = parseInt(document.getElementById('goal-fat')?.value ?? '0', 10);
 
   if (isNaN(calories) || calories < 500) {
     showToast('error', 'Invalid Calories', 'Calories must be at least 500 kcal.');
     return;
   }
-  AppState.nutritionGoals = { calories, protein, carbs, fat };
-  showToast('success', 'Goals Updated', 'Your daily nutrition goals have been saved.');
+
+  const btn = document.getElementById('save-goals-btn');
+  setButtonLoading(btn, true);
+
+  try {
+    const result = await updateNutritionGoals({ calories, protein, carbs, fat });
+    if (result && result.success) {
+      AppState.nutritionGoals = { calories, protein, carbs, fat };
+      renderNutritionProgress(AppState.nutritionToday, AppState.nutritionGoals);
+      showToast('success', 'Goals Updated', 'Your daily nutrition goals have been saved.');
+    } else {
+      showToast('error', 'Update Failed', result?.message ?? 'Could not save goals.');
+    }
+  } catch (err) {
+    console.error('[handleSaveGoals]', err);
+    showToast('error', 'Error', 'An unexpected error occurred.');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+/**
+ * handleAvatarUpload — Upload a new profile photo from the profile view.
+ * Validates client-side, sends via FormData to Upload.php (action=upload_avatar),
+ * then updates the avatar element in-place without a page reload.
+ * @param {File} file
+ */
+async function handleAvatarUpload(file) {
+  // ── Client-side validation ──────────────────────────────
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const maxSize = 5 * 1024 * 1024; // 5 MB
+
+  if (!allowedTypes.includes(file.type)) {
+    showToast('error', 'Invalid File Type', 'Only JPG, PNG, and WEBP images are accepted for avatars.');
+    return;
+  }
+  if (file.size > maxSize) {
+    showToast('error', 'File Too Large', 'Profile photo must be under 5 MB.');
+    return;
+  }
+
+  // Show instant local preview while uploading
+  const avEl = document.getElementById('profile-avatar');
+  const statusEl = document.getElementById('avatar-upload-status');
+  const changeBtn = document.getElementById('avatar-change-btn');
+  const fileInput = document.getElementById('profile-avatar-input');
+
+  if (statusEl) statusEl.textContent = 'Uploading…';
+  if (changeBtn) changeBtn.disabled = true;
+
+  // Show local preview immediately (FileReader)
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    if (avEl) avEl.innerHTML = `<img src="${e.target.result}" alt="Avatar preview"
+      style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+  };
+  reader.readAsDataURL(file);
+
+  try {
+    const result = await uploadAvatar(file);
+    if (result && result.success) {
+      // Replace temporary blob preview with the server-stored path
+      if (avEl && result.avatar_path) {
+        avEl.innerHTML = `<img src="${sanitizeOutput(result.avatar_path)}" alt="Avatar"
+          style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+      }
+      if (statusEl) statusEl.textContent = '';
+      showToast('success', 'Photo Updated', 'Your profile photo has been saved.');
+    } else {
+      // Revert to initials on failure
+      if (avEl) avEl.textContent = avEl.dataset.initial ?? 'U';
+      if (statusEl) statusEl.textContent = '';
+      showToast('error', 'Upload Failed', result?.message ?? 'Could not save profile photo.');
+    }
+  } catch (err) {
+    console.error('[handleAvatarUpload]', err);
+    if (avEl) avEl.textContent = avEl.dataset.initial ?? 'U';
+    if (statusEl) statusEl.textContent = '';
+    showToast('error', 'Error', 'An unexpected error occurred during upload.');
+  } finally {
+    if (changeBtn) changeBtn.disabled = false;
+    // Reset file input so the same file can be re-selected if needed
+    if (fileInput) fileInput.value = '';
+  }
 }
 
 
@@ -1512,64 +2154,64 @@ function renderThemeSelector() {
   ];
 
   let html = '<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">';
-    themes.forEach(t => {
-        const isActive = currentTheme === t.id;
-        html += '<label class="theme-option" style="display:flex;align-items:center;cursor:pointer;padding:8px 12px;border-radius:8px;border:2px solid ' + (isActive ? 'var(--primary-color)' : 'var(--color-gray-dark)') + ';background:' + (isActive ? 'var(--color-gray)' : 'transparent') + ';transition:all 0.2s ease;">' +
-          '<input type="radio" name="theme_choice" value="' + t.id + '" ' + (isActive ? 'checked' : '') + ' style="margin-right:12px;">' +
-          '<span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:' + t.p + ';margin-right:12px;border:1px solid rgba(0,0,0,0.1);"></span>' +
-          '<span style="font-weight:500;">' + t.name + '</span>' +
-          '</label>';
-    });
-    html += '</div>';
+  themes.forEach(t => {
+    const isActive = currentTheme === t.id;
+    html += '<label class="theme-option" style="display:flex;align-items:center;cursor:pointer;padding:8px 12px;border-radius:8px;border:2px solid ' + (isActive ? 'var(--primary-color)' : 'var(--color-gray-dark)') + ';background:' + (isActive ? 'var(--color-gray)' : 'transparent') + ';transition:all 0.2s ease;">' +
+      '<input type="radio" name="theme_choice" value="' + t.id + '" ' + (isActive ? 'checked' : '') + ' style="margin-right:12px;">' +
+      '<span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:' + t.p + ';margin-right:12px;border:1px solid rgba(0,0,0,0.1);"></span>' +
+      '<span style="font-weight:500;">' + t.name + '</span>' +
+      '</label>';
+  });
+  html += '</div>';
 
-    // Only show color pickers if custom is selected
-    if (currentTheme === 'custom') {
-        const customColors = JSON.parse(localStorage.getItem('ingredio_custom_colors')) || {
-            primary: '#8BCF3F', secondary: '#FF7A00', bg: '#ffffff', card: '#ffffff', text: '#333333'
-        };
-        html += '<div style="padding:16px;background:var(--color-gray);border-radius:12px;display:flex;flex-direction:column;gap:12px;">' +
-          '<h5 style="margin-bottom:4px;">Customize Colors</h5>' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Primary</label> <input type="color" id="custom-primary" value="' + customColors.primary + '"></div>' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Secondary</label> <input type="color" id="custom-secondary" value="' + customColors.secondary + '"></div>' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Background</label> <input type="color" id="custom-bg" value="' + customColors.bg + '"></div>' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Card</label> <input type="color" id="custom-card" value="' + customColors.card + '"></div>' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Text</label> <input type="color" id="custom-text" value="' + customColors.text + '"></div>' +
-          '</div>';
-    }
+  // Only show color pickers if custom is selected
+  if (currentTheme === 'custom') {
+    const customColors = JSON.parse(localStorage.getItem('ingredio_custom_colors')) || {
+      primary: '#8BCF3F', secondary: '#FF7A00', bg: '#ffffff', card: '#ffffff', text: '#333333'
+    };
+    html += '<div style="padding:16px;background:var(--color-gray);border-radius:12px;display:flex;flex-direction:column;gap:12px;">' +
+      '<h5 style="margin-bottom:4px;">Customize Colors</h5>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Primary</label> <input type="color" id="custom-primary" value="' + customColors.primary + '"></div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Secondary</label> <input type="color" id="custom-secondary" value="' + customColors.secondary + '"></div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Background</label> <input type="color" id="custom-bg" value="' + customColors.bg + '"></div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Card</label> <input type="color" id="custom-card" value="' + customColors.card + '"></div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;"><label>Text</label> <input type="color" id="custom-text" value="' + customColors.text + '"></div>' +
+      '</div>';
+  }
 
-    container.innerHTML = html;
+  container.innerHTML = html;
 
-    // Bind event listeners for the radio buttons
-    container.querySelectorAll('input[name="theme_choice"]').forEach(radio => {
-        radio.addEventListener('change', (e) => handleThemeChange(e.target.value));
-    });
+  // Bind event listeners for the radio buttons
+  container.querySelectorAll('input[name="theme_choice"]').forEach(radio => {
+    radio.addEventListener('change', (e) => handleThemeChange(e.target.value));
+  });
 
-    // Bind color pickers
-    if (currentTheme === 'custom') {
-        const inputs = ['primary', 'secondary', 'bg', 'card', 'text'];
-        inputs.forEach(key => {
-            const el = document.getElementById('custom-' + key);
-            if (el) {
-                el.addEventListener('input', () => {
-                    const colors = {
-                        primary: document.getElementById('custom-primary').value,
-                        secondary: document.getElementById('custom-secondary').value,
-                        bg: document.getElementById('custom-bg').value,
-                        card: document.getElementById('custom-card').value,
-                        text: document.getElementById('custom-text').value
-                    };
-                    localStorage.setItem('ingredio_custom_colors', JSON.stringify(colors));
-                    applyTheme('custom');
-                });
-            }
+  // Bind color pickers
+  if (currentTheme === 'custom') {
+    const inputs = ['primary', 'secondary', 'bg', 'card', 'text'];
+    inputs.forEach(key => {
+      const el = document.getElementById('custom-' + key);
+      if (el) {
+        el.addEventListener('input', () => {
+          const colors = {
+            primary: document.getElementById('custom-primary').value,
+            secondary: document.getElementById('custom-secondary').value,
+            bg: document.getElementById('custom-bg').value,
+            card: document.getElementById('custom-card').value,
+            text: document.getElementById('custom-text').value
+          };
+          localStorage.setItem('ingredio_custom_colors', JSON.stringify(colors));
+          applyTheme('custom');
         });
-    }
+      }
+    });
+  }
 }
 
 function handleThemeChange(themeName) {
-    applyTheme(themeName);
-    renderThemeSelector();
-    showToast('success', 'Theme Updated', 'Your appearance preferences have been saved.');
+  applyTheme(themeName);
+  renderThemeSelector();
+  showToast('success', 'Theme Updated', 'Your appearance preferences have been saved.');
 }
 
 
@@ -1581,16 +2223,16 @@ function handleThemeChange(themeName) {
  * showLoader — Show the global loading overlay.
  */
 function showLoader() {
-    const loader = document.getElementById('global-loader');
-    if (loader) { loader.classList.add('active'); loader.removeAttribute('aria-hidden'); }
+  const loader = document.getElementById('global-loader');
+  if (loader) { loader.classList.add('active'); loader.removeAttribute('aria-hidden'); }
 }
 
 /**
  * hideLoader — Hide the global loading overlay.
  */
 function hideLoader() {
-    const loader = document.getElementById('global-loader');
-    if (loader) { loader.classList.remove('active'); loader.setAttribute('aria-hidden', 'true'); }
+  const loader = document.getElementById('global-loader');
+  if (loader) { loader.classList.remove('active'); loader.setAttribute('aria-hidden', 'true'); }
 }
 
 /**
@@ -1601,21 +2243,21 @@ function hideLoader() {
  * @param {number} duration  - ms before auto-dismiss (default 4500)
  */
 function showToast(type, title, message, duration = 4500) {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
+  const container = document.getElementById('toast-container');
+  if (!container) return;
 
-    const icons = {
-        success: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
-        error:   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-        warning: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-        info:    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
-    };
-    const icon = icons[type] ?? icons.info;
+  const icons = {
+    success: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    error: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+    warning: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    info: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+  };
+  const icon = icons[type] ?? icons.info;
 
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.setAttribute('role', 'alert');
-    toast.innerHTML = `
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.setAttribute('role', 'alert');
+  toast.innerHTML = `
     <span class="toast-icon" aria-hidden="true">${icon}</span>
     <div class="toast-body">
       <p class="toast-title">${sanitizeOutput(title)}</p>
@@ -1623,22 +2265,22 @@ function showToast(type, title, message, duration = 4500) {
     </div>
     <button class="toast-close" aria-label="Dismiss notification">&times;</button>`;
 
-    container.appendChild(toast);
+  container.appendChild(toast);
 
-    // Close button
-    toast.querySelector('.toast-close')?.addEventListener('click', () => dismissToast(toast));
+  // Close button
+  toast.querySelector('.toast-close')?.addEventListener('click', () => dismissToast(toast));
 
-    // Auto-dismiss
-    const timer = setTimeout(() => dismissToast(toast), duration);
-    toast._dismissTimer = timer;
+  // Auto-dismiss
+  const timer = setTimeout(() => dismissToast(toast), duration);
+  toast._dismissTimer = timer;
 }
 
 function dismissToast(toast) {
-    if (!toast || toast._dismissed) return;
-    toast._dismissed = true;
-    clearTimeout(toast._dismissTimer);
-    toast.classList.add('hiding');
-    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  if (!toast || toast._dismissed) return;
+  toast._dismissed = true;
+  clearTimeout(toast._dismissTimer);
+  toast.classList.add('hiding');
+  toast.addEventListener('animationend', () => toast.remove(), { once: true });
 }
 
 /**
@@ -1646,30 +2288,30 @@ function dismissToast(toast) {
  * @param {string} html - Inner HTML for the modal (sanitize before use in data attrs)
  */
 function openModal(html) {
-    const overlay = document.getElementById('modal-overlay');
-    const content = document.getElementById('modal-content');
-    if (!overlay || !content) return;
-    content.innerHTML = html;
-    overlay.removeAttribute('hidden');
-    document.body.style.overflow = 'hidden';
+  const overlay = document.getElementById('modal-overlay');
+  const content = document.getElementById('modal-content');
+  if (!overlay || !content) return;
+  content.innerHTML = html;
+  overlay.removeAttribute('hidden');
+  document.body.style.overflow = 'hidden';
 
-    // Focus the first interactive element
-    setTimeout(() => {
-        const firstInput = overlay.querySelector('input, select, textarea, button:not(.modal-close)');
-        firstInput?.focus();
-    }, 100);
+  // Focus the first interactive element
+  setTimeout(() => {
+    const firstInput = overlay.querySelector('input, select, textarea, button:not(.modal-close)');
+    firstInput?.focus();
+  }, 100);
 }
 
 /**
  * closeModal — Hide the global modal.
  */
 function closeModal() {
-    const overlay = document.getElementById('modal-overlay');
-    const content = document.getElementById('modal-content');
-    if (!overlay) return;
-    overlay.setAttribute('hidden', '');
-    document.body.style.overflow = '';
-    if (content) content.innerHTML = '';
+  const overlay = document.getElementById('modal-overlay');
+  const content = document.getElementById('modal-content');
+  if (!overlay) return;
+  overlay.setAttribute('hidden', '');
+  document.body.style.overflow = '';
+  if (content) content.innerHTML = '';
 }
 
 /**
@@ -1679,13 +2321,13 @@ function closeModal() {
  * @returns {string}
  */
 function sanitizeOutput(str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-        .replace(/&/g,  '&amp;')
-        .replace(/</g,  '&lt;')
-        .replace(/>/g,  '&gt;')
-        .replace(/"/g,  '&quot;')
-        .replace(/'/g,  '&#039;');
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 
@@ -1694,111 +2336,111 @@ function sanitizeOutput(str) {
 ============================================================ */
 
 function markActiveNavLink(view) {
-    document.querySelectorAll('[data-view]').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll(`[data-view="${view}"]`).forEach(el => el.classList.add('active'));
+  document.querySelectorAll('[data-view]').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll(`[data-view="${view}"]`).forEach(el => el.classList.add('active'));
 }
 
 function toggleMobileDrawer() {
-    const drawer    = document.getElementById('mobile-drawer');
-    const hamburger = document.getElementById('hamburger-btn');
-    const isOpen    = drawer?.classList.contains('open');
+  const drawer = document.getElementById('mobile-drawer');
+  const hamburger = document.getElementById('hamburger-btn');
+  const isOpen = drawer?.classList.contains('open');
 
-    if (drawer) {
-        drawer.classList.toggle('open', !isOpen);
-        drawer.setAttribute('aria-hidden', String(isOpen));
-    }
-    if (hamburger) {
-        hamburger.classList.toggle('open', !isOpen);
-        hamburger.setAttribute('aria-expanded', String(!isOpen));
-    }
+  if (drawer) {
+    drawer.classList.toggle('open', !isOpen);
+    drawer.setAttribute('aria-hidden', String(isOpen));
+  }
+  if (hamburger) {
+    hamburger.classList.toggle('open', !isOpen);
+    hamburger.setAttribute('aria-expanded', String(!isOpen));
+  }
 }
 
 function closeMobileDrawer() {
-    const drawer    = document.getElementById('mobile-drawer');
-    const hamburger = document.getElementById('hamburger-btn');
-    if (drawer)    { drawer.classList.remove('open');    drawer.setAttribute('aria-hidden', 'true'); }
-    if (hamburger) { hamburger.classList.remove('open'); hamburger.setAttribute('aria-expanded', 'false'); }
+  const drawer = document.getElementById('mobile-drawer');
+  const hamburger = document.getElementById('hamburger-btn');
+  if (drawer) { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); }
+  if (hamburger) { hamburger.classList.remove('open'); hamburger.setAttribute('aria-expanded', 'false'); }
 }
 
 function setButtonLoading(btn, loading) {
-    if (!btn) return;
-    if (loading) {
-        btn._originalText = btn.innerHTML;
-        btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;"></span>Loading…';
-        btn.disabled = true;
-    } else {
-        if (btn._originalText) btn.innerHTML = btn._originalText;
-        btn.disabled = false;
-    }
+  if (!btn) return;
+  if (loading) {
+    btn._originalText = btn.innerHTML;
+    btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;"></span>Loading…';
+    btn.disabled = true;
+  } else {
+    if (btn._originalText) btn.innerHTML = btn._originalText;
+    btn.disabled = false;
+  }
 }
 
 function showFieldError(inputId, errorId, msg) {
-    const input = document.getElementById(inputId);
-    const error = document.getElementById(errorId);
-    if (input) input.classList.add('error');
-    if (error) { error.textContent = msg; error.style.display = 'block'; }
+  const input = document.getElementById(inputId);
+  const error = document.getElementById(errorId);
+  if (input) input.classList.add('error');
+  if (error) { error.textContent = msg; error.style.display = 'block'; }
 }
 
 function clearFieldError(inputId, errorId) {
-    const input = document.getElementById(inputId);
-    const error = document.getElementById(errorId);
-    if (input) input.classList.remove('error');
-    if (error) { error.textContent = ''; error.style.display = 'none'; }
+  const input = document.getElementById(inputId);
+  const error = document.getElementById(errorId);
+  if (input) input.classList.remove('error');
+  if (error) { error.textContent = ''; error.style.display = 'none'; }
 }
 
 function showEl(el, text) {
-    if (!el) return;
-    if (text !== undefined) el.textContent = text;
-    el.style.display = 'block';
+  if (!el) return;
+  if (text !== undefined) el.textContent = text;
+  el.style.display = 'block';
 }
 
 function hideEl(el) {
-    if (!el) return;
-    el.style.display = 'none';
+  if (!el) return;
+  el.style.display = 'none';
 }
 
 function setInnerText(id, val) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = val;
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
 }
 
 function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function getTimeGreeting() {
-    const h = new Date().getHours();
-    if (h < 12) return 'morning';
-    if (h < 17) return 'afternoon';
-    return 'evening';
+  const h = new Date().getHours();
+  if (h < 12) return 'morning';
+  if (h < 17) return 'afternoon';
+  return 'evening';
 }
 
 function getCategoryIcon(category) {
-    const icons = {
-        produce:   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0 1 10 10c0 5.52-4.48 10-10 10S2 17.52 2 12A10 10 0 0 1 12 2z"/><path d="M12 2c0 5.52-2 9-5 11"/><path d="M12 2c0 5.52 2 9 5 11"/><line x1="2" y1="12" x2="22" y2="12"/></svg>',
-        dairy:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2h8l1 6H7L8 2z"/><path d="M7 8l-2 13h14L17 8"/></svg>',
-        protein:   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>',
-        grains:    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20"/><path d="M6 20V10l6-8 6 8v10"/><path d="M6 14h12"/></svg>',
-        spices:    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M12 8v4l3 3"/></svg>',
-        beverages: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/></svg>',
-        other:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
-    };
-    return icons[category] ?? icons.other;
+  const icons = {
+    produce: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0 1 10 10c0 5.52-4.48 10-10 10S2 17.52 2 12A10 10 0 0 1 12 2z"/><path d="M12 2c0 5.52-2 9-5 11"/><path d="M12 2c0 5.52 2 9 5 11"/><line x1="2" y1="12" x2="22" y2="12"/></svg>',
+    dairy: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2h8l1 6H7L8 2z"/><path d="M7 8l-2 13h14L17 8"/></svg>',
+    protein: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>',
+    grains: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20"/><path d="M6 20V10l6-8 6 8v10"/><path d="M6 14h12"/></svg>',
+    spices: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M12 8v4l3 3"/></svg>',
+    beverages: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/></svg>',
+    other: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
+  };
+  return icons[category] ?? icons.other;
 }
 
 function daysUntil(dateStr) {
-    if (!dateStr) return null;
-    const expiry = new Date(dateStr);
-    const now    = new Date();
-    const diffMs = expiry - now;
-    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (!dateStr) return null;
+  const expiry = new Date(dateStr);
+  const now = new Date();
+  const diffMs = expiry - now;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
 function formatDate(dateStr) {
-    if (!dateStr) return '';
-    try {
-        return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    } catch { return dateStr; }
+  if (!dateStr) return '';
+  try {
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return dateStr; }
 }
 
 
@@ -1810,16 +2452,16 @@ function formatDate(dateStr) {
 
 /** Shared SVG icons for auth UI */
 const AUTH_ICONS = {
-    eye: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
-    eyeOff: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
-    user: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
-    check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
-    camera: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
+  eye: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  eyeOff: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
+  user: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+  check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+  camera: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
 };
 
 /** Brand panel HTML shared between login and register */
 function renderAuthBrandPanel() {
-    return `
+  return `
     <div class="auth-brand-panel">
         <div class="auth-brand-inner">
             <div class="auth-brand-logo">
@@ -1841,7 +2483,7 @@ function renderAuthBrandPanel() {
  * renderLogin — Returns HTML for the Login view.
  */
 function renderLogin() {
-    return `
+  return `
     <div class="auth-wrapper view-enter">
         ${renderAuthBrandPanel()}
         <div class="auth-form-panel">
@@ -1895,7 +2537,7 @@ function renderLogin() {
  * renderRegister — Returns HTML for the Register view.
  */
 function renderRegister() {
-    return `
+  return `
     <div class="auth-wrapper view-enter">
         ${renderAuthBrandPanel()}
         <div class="auth-form-panel">
@@ -1988,46 +2630,46 @@ function renderRegister() {
  * @param {Event} e
  */
 async function handleLogin(e) {
-    e.preventDefault();
+  e.preventDefault();
 
-    const email    = document.getElementById('login-email')?.value.trim() ?? '';
-    const password = document.getElementById('login-password')?.value ?? '';
-    const banner   = document.getElementById('login-error-banner');
+  const email = document.getElementById('login-email')?.value.trim() ?? '';
+  const password = document.getElementById('login-password')?.value ?? '';
+  const banner = document.getElementById('login-error-banner');
 
-    // Clear previous errors
-    hideEl(banner);
-    clearFieldError('login-email',    'login-email-error');
-    clearFieldError('login-password', 'login-password-error');
+  // Clear previous errors
+  hideEl(banner);
+  clearFieldError('login-email', 'login-email-error');
+  clearFieldError('login-password', 'login-password-error');
 
-    // Client-side validation
-    let valid = true;
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        showFieldError('login-email', 'login-email-error', 'Enter a valid email address.');
-        valid = false;
+  // Client-side validation
+  let valid = true;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showFieldError('login-email', 'login-email-error', 'Enter a valid email address.');
+    valid = false;
+  }
+  if (!password) {
+    showFieldError('login-password', 'login-password-error', 'Password is required.');
+    valid = false;
+  }
+  if (!valid) return;
+
+  const btn = document.getElementById('login-submit-btn');
+  setButtonLoading(btn, true);
+
+  try {
+    const result = await loginUser(email, password);
+    if (result && result.success) {
+      showToast('success', 'Welcome back!', 'You have signed in successfully.');
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      showEl(banner, result?.message ?? 'Invalid email or password. Please try again.');
     }
-    if (!password) {
-        showFieldError('login-password', 'login-password-error', 'Password is required.');
-        valid = false;
-    }
-    if (!valid) return;
-
-    const btn = document.getElementById('login-submit-btn');
-    setButtonLoading(btn, true);
-
-    try {
-        const result = await loginUser(email, password);
-        if (result && result.success) {
-            showToast('success', 'Welcome back!', 'You have signed in successfully.');
-            setTimeout(() => window.location.reload(), 1200);
-        } else {
-            showEl(banner, result?.message ?? 'Invalid email or password. Please try again.');
-        }
-    } catch (err) {
-        console.error('[handleLogin]', err);
-        showEl(banner, 'Connection error. Please check your connection and try again.');
-    } finally {
-        setButtonLoading(btn, false);
-    }
+  } catch (err) {
+    console.error('[handleLogin]', err);
+    showEl(banner, 'Connection error. Please check your connection and try again.');
+  } finally {
+    setButtonLoading(btn, false);
+  }
 }
 
 /**
@@ -2035,70 +2677,70 @@ async function handleLogin(e) {
  * @param {Event} e
  */
 async function handleRegister(e) {
-    e.preventDefault();
+  e.preventDefault();
 
-    const fullname  = document.getElementById('reg-fullname')?.value.trim() ?? '';
-    const username  = document.getElementById('reg-username')?.value.trim() ?? '';
-    const email     = document.getElementById('reg-email')?.value.trim() ?? '';
-    const password  = document.getElementById('reg-password')?.value ?? '';
-    const confirmPw = document.getElementById('reg-confirm-pw')?.value ?? '';
-    const banner    = document.getElementById('register-error-banner');
+  const fullname = document.getElementById('reg-fullname')?.value.trim() ?? '';
+  const username = document.getElementById('reg-username')?.value.trim() ?? '';
+  const email = document.getElementById('reg-email')?.value.trim() ?? '';
+  const password = document.getElementById('reg-password')?.value ?? '';
+  const confirmPw = document.getElementById('reg-confirm-pw')?.value ?? '';
+  const banner = document.getElementById('register-error-banner');
 
-    hideEl(banner);
-    ['reg-fullname','reg-username','reg-email','reg-password','reg-confirm-pw'].forEach(id =>
-        clearFieldError(id, id + '-error'));
+  hideEl(banner);
+  ['reg-fullname', 'reg-username', 'reg-email', 'reg-password', 'reg-confirm-pw'].forEach(id =>
+    clearFieldError(id, id + '-error'));
 
-    // Validation
-    let valid = true;
-    if (!fullname || fullname.length < 2) {
-        showFieldError('reg-fullname', 'reg-fullname-error', 'Full name must be at least 2 characters.');
-        valid = false;
-    }
-    if (!username || !/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
-        showFieldError('reg-username', 'reg-username-error', 'Username: 3-30 characters, letters, numbers, underscores only.');
-        valid = false;
-    }
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        showFieldError('reg-email', 'reg-email-error', 'Enter a valid email address.');
-        valid = false;
-    }
-    if (!password || calcPasswordStrength(password) < 2) {
-        showFieldError('reg-password', 'reg-password-error', 'Password is too weak. Include uppercase, numbers, and symbols.');
-        valid = false;
-    }
-    if (password !== confirmPw) {
-        showFieldError('reg-confirm-pw', 'reg-confirm-pw-error', 'Passwords do not match.');
-        valid = false;
-    }
-    if (!valid) return;
+  // Validation
+  let valid = true;
+  if (!fullname || fullname.length < 3) {
+    showFieldError('reg-fullname', 'reg-fullname-error', 'Full name must be at least 3 characters.');
+    valid = false;
+  }
+  if (!username || !/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+    showFieldError('reg-username', 'reg-username-error', 'Username: 3-30 characters, letters, numbers, underscores only.');
+    valid = false;
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showFieldError('reg-email', 'reg-email-error', 'Enter a valid email address.');
+    valid = false;
+  }
+  if (!password || calcPasswordStrength(password) < 2) {
+    showFieldError('reg-password', 'reg-password-error', 'Password is too weak. Include uppercase, numbers, and symbols.');
+    valid = false;
+  }
+  if (password !== confirmPw) {
+    showFieldError('reg-confirm-pw', 'reg-confirm-pw-error', 'Passwords do not match.');
+    valid = false;
+  }
+  if (!valid) return;
 
-    const btn = document.getElementById('register-submit-btn');
-    setButtonLoading(btn, true);
+  const btn = document.getElementById('register-submit-btn');
+  setButtonLoading(btn, true);
 
-    try {
-        // Optional: upload avatar first if selected
-        let avatarPath = '';
-        const avatarFile = document.getElementById('avatar-file-input')?.files?.[0];
-        if (avatarFile) {
-            const uploadResult = await uploadMealImage({ file: avatarFile, mealName: username, notes: '', calories: '', date: '' });
-            if (uploadResult?.success) avatarPath = uploadResult.image_path ?? '';
-        }
-
-        const result = await registerUser({ fullname, username, email, password, avatar: avatarPath });
-        if (result && result.success) {
-            showToast('success', 'Account Created!', 'Welcome to Ingredio. Please sign in.');
-            await sleep(1200);
-            AppState.currentView = null;
-            loadView('login');
-        } else {
-            showEl(banner, result?.message ?? 'Registration failed. Please try again.');
-        }
-    } catch (err) {
-        console.error('[handleRegister]', err);
-        showEl(banner, 'Connection error. Please try again.');
-    } finally {
-        setButtonLoading(btn, false);
+  try {
+    // Optional: upload avatar first if selected
+    let avatarPath = '';
+    const avatarFile = document.getElementById('avatar-file-input')?.files?.[0];
+    if (avatarFile) {
+      const uploadResult = await uploadMealImage({ file: avatarFile, mealName: username, notes: '', calories: '', date: '' });
+      if (uploadResult?.success) avatarPath = uploadResult.image_path ?? '';
     }
+
+    const result = await registerUser({ fullname, username, email, password, avatar: avatarPath });
+    if (result && result.success) {
+      showToast('success', 'Account Created!', 'Welcome to Ingredio. Please sign in.');
+      await sleep(1200);
+      AppState.currentView = null;
+      loadView('login');
+    } else {
+      showEl(banner, result?.message ?? 'Registration failed. Please try again.');
+    }
+  } catch (err) {
+    console.error('[handleRegister]', err);
+    showEl(banner, 'Connection error. Please try again.');
+  } finally {
+    setButtonLoading(btn, false);
+  }
 }
 
 /**
@@ -2107,13 +2749,13 @@ async function handleRegister(e) {
  * @param {string} btnId
  */
 function togglePasswordVisibility(inputId, btnId) {
-    const input = document.getElementById(inputId);
-    const btn   = document.getElementById(btnId);
-    if (!input || !btn) return;
-    const isHidden = input.type === 'password';
-    input.type = isHidden ? 'text' : 'password';
-    btn.innerHTML  = isHidden ? AUTH_ICONS.eyeOff : AUTH_ICONS.eye;
-    btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+  const input = document.getElementById(inputId);
+  const btn = document.getElementById(btnId);
+  if (!input || !btn) return;
+  const isHidden = input.type === 'password';
+  input.type = isHidden ? 'text' : 'password';
+  btn.innerHTML = isHidden ? AUTH_ICONS.eyeOff : AUTH_ICONS.eye;
+  btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
 }
 
 /**
@@ -2122,56 +2764,56 @@ function togglePasswordVisibility(inputId, btnId) {
  * @returns {number}
  */
 function calcPasswordStrength(pw) {
-    let score = 0;
-    if (pw.length >= 8)                    score++;
-    if (pw.length >= 12)                   score++;
-    if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
-    if (/[0-9]/.test(pw))                  score++;
-    if (/[^A-Za-z0-9]/.test(pw))           score++;
-    return Math.min(4, score);
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  return Math.min(4, score);
 }
 
 /**
  * updatePasswordStrength — Update the strength meter UI.
  */
 function updatePasswordStrength() {
-    const pw    = document.getElementById('reg-password')?.value ?? '';
-    const wrap  = document.getElementById('password-strength-wrap');
-    const label = document.getElementById('strength-label');
-    if (!wrap) return;
+  const pw = document.getElementById('reg-password')?.value ?? '';
+  const wrap = document.getElementById('password-strength-wrap');
+  const label = document.getElementById('strength-label');
+  if (!wrap) return;
 
-    if (!pw) { wrap.style.display = 'none'; return; }
-    wrap.style.display = 'flex';
+  if (!pw) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'flex';
 
-    const score = calcPasswordStrength(pw);
-    const levels = [
-        { text: 'Too weak',  cls: 'strength-weak' },
-        { text: 'Fair',      cls: 'strength-fair' },
-        { text: 'Good',      cls: 'strength-good' },
-        { text: 'Strong',    cls: 'strength-strong' },
-        { text: 'Very strong', cls: 'strength-strong' },
-    ];
-    const barClasses = ['', 'strength-weak', 'strength-fair', 'strength-good', 'strength-strong'];
+  const score = calcPasswordStrength(pw);
+  const levels = [
+    { text: 'Too weak', cls: 'strength-weak' },
+    { text: 'Fair', cls: 'strength-fair' },
+    { text: 'Good', cls: 'strength-good' },
+    { text: 'Strong', cls: 'strength-strong' },
+    { text: 'Very strong', cls: 'strength-strong' },
+  ];
+  const barClasses = ['', 'strength-weak', 'strength-fair', 'strength-good', 'strength-strong'];
 
-    [1, 2, 3, 4].forEach(i => {
-        const bar = document.getElementById('sb' + i);
-        if (bar) bar.className = 'strength-bar' + (score >= i ? ' ' + barClasses[score] : '');
-    });
-    if (label) { label.textContent = levels[score]?.text ?? ''; label.className = 'strength-label ' + (levels[score]?.cls ?? ''); }
+  [1, 2, 3, 4].forEach(i => {
+    const bar = document.getElementById('sb' + i);
+    if (bar) bar.className = 'strength-bar' + (score >= i ? ' ' + barClasses[score] : '');
+  });
+  if (label) { label.textContent = levels[score]?.text ?? ''; label.className = 'strength-label ' + (levels[score]?.cls ?? ''); }
 }
 
 /**
  * validatePasswordMatch — Show inline error if passwords differ.
  */
 function validatePasswordMatch() {
-    const pw  = document.getElementById('reg-password')?.value ?? '';
-    const cpw = document.getElementById('reg-confirm-pw')?.value ?? '';
-    if (!cpw) return;
-    if (pw !== cpw) {
-        showFieldError('reg-confirm-pw', 'reg-confirm-pw-error', 'Passwords do not match.');
-    } else {
-        clearFieldError('reg-confirm-pw', 'reg-confirm-pw-error');
-    }
+  const pw = document.getElementById('reg-password')?.value ?? '';
+  const cpw = document.getElementById('reg-confirm-pw')?.value ?? '';
+  if (!cpw) return;
+  if (pw !== cpw) {
+    showFieldError('reg-confirm-pw', 'reg-confirm-pw-error', 'Passwords do not match.');
+  } else {
+    clearFieldError('reg-confirm-pw', 'reg-confirm-pw-error');
+  }
 }
 
 /**
@@ -2179,29 +2821,29 @@ function validatePasswordMatch() {
  * @param {Event} e
  */
 function handleAvatarPreview(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const file = e.target.files?.[0];
+  if (!file) return;
 
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-        showToast('error', 'Invalid File', 'Only JPG, PNG, and WEBP images are accepted.');
-        e.target.value = '';
-        return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-        showToast('error', 'File Too Large', 'Profile photo must be under 5 MB.');
-        e.target.value = '';
-        return;
-    }
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    showToast('error', 'Invalid File', 'Only JPG, PNG, and WEBP images are accepted.');
+    e.target.value = '';
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('error', 'File Too Large', 'Profile photo must be under 5 MB.');
+    e.target.value = '';
+    return;
+  }
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-        const img  = document.getElementById('avatar-img-preview');
-        const ph   = document.getElementById('avatar-placeholder');
-        if (img)  { img.src = ev.target.result; img.style.display = 'block'; }
-        if (ph)   { ph.style.display = 'none'; }
-    };
-    reader.readAsDataURL(file);
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = document.getElementById('avatar-img-preview');
+    const ph = document.getElementById('avatar-placeholder');
+    if (img) { img.src = ev.target.result; img.style.display = 'block'; }
+    if (ph) { ph.style.display = 'none'; }
+  };
+  reader.readAsDataURL(file);
 }
 
 

@@ -36,6 +36,8 @@ header('X-Frame-Options: DENY');
 
 define('UPLOAD_DIR', __DIR__ . '/uploads/');
 define('UPLOAD_URL', 'uploads/');
+define('AVATAR_UPLOAD_DIR', __DIR__ . '/uploads/avatars/');
+define('AVATAR_UPLOAD_URL', 'uploads/avatars/');
 define('MAX_FILE_SIZE', 5 * 1024 * 1024);   // 5 MB in bytes
 
 /** Allowed MIME types and their corresponding safe extensions */
@@ -79,13 +81,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Check file was sent
-if (empty($_FILES['meal_image'])) {
+// Check file was sent — accept either meal_image or avatar_image
+$action = $_POST['action'] ?? 'upload_meal';
+$fileKey = ($action === 'upload_avatar') ? 'avatar_image' : 'meal_image';
+
+if (empty($_FILES[$fileKey])) {
     echo json_encode(['success' => false, 'message' => 'No file received.']);
     exit;
 }
 
-$file = $_FILES['meal_image'];
+$file = $_FILES[$fileKey];
 
 // Check for upload errors
 if ($file['error'] !== UPLOAD_ERR_OK) {
@@ -177,11 +182,22 @@ if (!file_exists($htaccessPath)) {
 
 /* ── Generate Unique Safe Filename ───────────────────────── */
 
+$targetDir = ($action === 'upload_avatar') ? AVATAR_UPLOAD_DIR : UPLOAD_DIR;
+
+// Ensure target directory exists
+if ($action === 'upload_avatar' && !is_dir($targetDir)) {
+    if (!mkdir($targetDir, 0755, true)) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Could not create avatar upload directory.']);
+        exit;
+    }
+}
+
 // Use bin2hex(random_bytes()) for cryptographic uniqueness
 // Never reuse original filename (prevents path traversal and overwriting)
 do {
     $uniqueName = bin2hex(random_bytes(16)) . '.' . $uploadedExt;
-    $destPath = UPLOAD_DIR . $uniqueName;
+    $destPath = $targetDir . $uniqueName;
 } while (file_exists($destPath));   // Guarantee no overwrite
 
 /* ── Move File to Destination ────────────────────────────── */
@@ -192,7 +208,60 @@ if (!move_uploaded_file($file['tmp_name'], $destPath)) {
     exit;
 }
 
-/* ── Persist to Database ─────────────────────────────────── */
+/* ── Avatar Upload Path ───────────────────────────────────────── */
+
+if ($action === 'upload_avatar') {
+    // Require an authenticated session for avatar uploads
+    $userId = $_SESSION['user_id'] ?? 0;
+    if (!$userId) {
+        // Clean up the already-moved file since we can't authorise the upload
+        @unlink($destPath);
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => 'You must be logged in to upload an avatar.']);
+        exit;
+    }
+
+    try {
+        $dsn = "mysql:host=localhost;dbname=ingredio;charset=utf8mb4";
+        $pdo = new PDO($dsn, 'root', '', [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES   => false,
+        ]);
+
+        // Delete old avatar file if it exists on disk (free up space)
+        $existing = $pdo->prepare("SELECT avatar_path FROM users WHERE id = ? LIMIT 1");
+        $existing->execute([$userId]);
+        $row = $existing->fetch();
+        if ($row && !empty($row['avatar_path'])) {
+            $oldFile = __DIR__ . '/' . $row['avatar_path'];
+            if (is_file($oldFile)) @unlink($oldFile);
+        }
+
+        // Update avatar_path in the users table (PDO prepared statement)
+        $avatarRelativePath = AVATAR_UPLOAD_URL . $uniqueName;
+        $stmt = $pdo->prepare("UPDATE users SET avatar_path = ? WHERE id = ?");
+        $stmt->execute([$avatarRelativePath, $userId]);
+
+        echo json_encode([
+            'success'     => true,
+            'avatar_path' => $avatarRelativePath,
+            'message'     => 'Profile photo updated successfully.',
+        ]);
+
+    } catch (PDOException $e) {
+        error_log('[Upload.php/avatar] DB error: ' . $e->getMessage());
+        // File is already saved — return path so UI can still update
+        echo json_encode([
+            'success'     => true,
+            'avatar_path' => $avatarRelativePath,
+            'message'     => 'Photo saved (profile DB update pending).',
+        ]);
+    }
+    exit;
+}
+
+/* ── Meal Image Upload Path (default) ──────────────────────────── */
 
 // Relative path stored in DB — not the full server path
 $relativePath = UPLOAD_URL . $uniqueName;
